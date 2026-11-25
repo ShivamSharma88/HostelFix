@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "2475045038",
+    "firebase_url": "https://hostelfix-app-74692-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "hostelfix-app-74692",
+    "storage_bucket": "hostelfix-app-74692.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:2475045038:android:f18361aaa67ee2bb93fd3f",
+        "android_client_info": {
+          "package_name": "com.example.hostelfix"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "2475045038-dp5jb4o08u134g25k4he4g5n6f6uh6ul.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.hostelfix",
+            "certificate_hash": "4ccc10212f36693ea38c3993dbee98fac3a38379"
+          }
+        },
+        {
+          "client_id": "2475045038-ginqkrmuta8k629jid8tklepaoufre56.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAYOjQDfOnV5xyirOhgs5Q1Vzzao6j8WNE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "2475045038-ginqkrmuta8k629jid8tklepaoufre56.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

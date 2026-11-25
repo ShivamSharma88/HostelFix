@@ -8,10 +8,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="PLACEHOLDER" />
-                  <option name="mobileSdkAppId" value="" />
-                  <option name="projectId" value="" />
-                  <option name="projectNumber" value="" />
+                  <option name="appId" value="com.example.hostelfix" />
+                  <option name="mobileSdkAppId" value="1:2475045038:android:f18361aaa67ee2bb93fd3f" />
+                  <option name="projectId" value="hostelfix-app-74692" />
+                  <option name="projectNumber" value="2475045038" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />
