@@ -25,9 +25,21 @@ class FirebaseIssueSync(
 ) {
     private fun sanitizeKey(raw: String): String =
         raw.trim()
-            .lowercase()
             .replace("@", "_at_")
-            .replace(Regex("[.#$\\[\\]]"), "_")
+            .replace(Regex("[.#$\\[\\]/]"), "_")
+
+    private fun normalizeCategory(raw: String): String =
+        when (raw.trim().uppercase()) {
+            "ACADEMICAL" -> "ACADEMICAL"
+            else -> "MAINTENANCE"
+        }
+
+    private fun normalizeStatus(raw: String): String =
+        when (raw.trim().uppercase()) {
+            "IN_PROGRESS" -> "IN_PROGRESS"
+            "RESOLVED" -> "RESOLVED"
+            else -> "OPEN"
+        }
 
     private fun issuesRef(studentId: String) =
         database.reference
@@ -37,18 +49,39 @@ class FirebaseIssueSync(
 
     suspend fun backupIssue(issue: IssueEntity) = withContext(Dispatchers.IO) {
         val cleanRegNo = issue.studentEmail.trim()
-        if (cleanRegNo.isBlank()) return@withContext
+        val cleanTitle = issue.title.trim()
+        if (!RegistrationNumberHelper.isValid(cleanRegNo) || cleanTitle.isBlank()) return@withContext
 
-        val effectiveSyncKey = issue.syncKey.trim().ifBlank { UUID.randomUUID().toString() }
+        val rawKey = issue.syncKey.trim().ifBlank { UUID.randomUUID().toString() }
+        val effectiveSyncKey = sanitizeKey(rawKey).ifBlank { UUID.randomUUID().toString() }
+        val normalizedCategory = normalizeCategory(issue.category)
+        val normalizedStatus = normalizeStatus(issue.status)
+        val resolvedCreatedAt = if (issue.createdAt > 0L) issue.createdAt else System.currentTimeMillis()
+        val resolvedTimeAgo = issue.timeAgo.trim().ifBlank { "Just now" }
+
+        val updatedIssue = issue.copy(
+            syncKey = effectiveSyncKey,
+            studentEmail = cleanRegNo,
+            title = cleanTitle,
+            description = issue.description.trim(),
+            category = normalizedCategory,
+            status = normalizedStatus,
+            timeAgo = resolvedTimeAgo,
+            createdAt = resolvedCreatedAt
+        )
+        if (updatedIssue != issue) {
+            dao.insertIssue(updatedIssue)
+        }
+
         val record = FirebaseIssueRecord(
             syncKey = effectiveSyncKey,
             studentEmail = cleanRegNo,
-            title = issue.title,
-            description = issue.description,
-            category = issue.category,
-            status = issue.status,
-            timeAgo = issue.timeAgo,
-            createdAt = issue.createdAt
+            title = cleanTitle,
+            description = updatedIssue.description,
+            category = normalizedCategory,
+            status = normalizedStatus,
+            timeAgo = resolvedTimeAgo,
+            createdAt = resolvedCreatedAt
         )
         issuesRef(cleanRegNo)
             .child(effectiveSyncKey)
@@ -58,8 +91,8 @@ class FirebaseIssueSync(
 
     suspend fun deleteIssueFromFirebase(issue: IssueEntity) = withContext(Dispatchers.IO) {
         val cleanRegNo = issue.studentEmail.trim()
-        val cleanSyncKey = issue.syncKey.trim()
-        if (cleanRegNo.isBlank() || cleanSyncKey.isBlank()) return@withContext
+        val cleanSyncKey = sanitizeKey(issue.syncKey)
+        if (!RegistrationNumberHelper.isValid(cleanRegNo) || cleanSyncKey.isBlank()) return@withContext
 
         issuesRef(cleanRegNo)
             .child(cleanSyncKey)
@@ -69,7 +102,7 @@ class FirebaseIssueSync(
 
     suspend fun backupAllIssuesToFirebase(email: String) = withContext(Dispatchers.IO) {
         val cleanRegNo = email.trim()
-        if (cleanRegNo.isBlank()) return@withContext
+        if (!RegistrationNumberHelper.isValid(cleanRegNo)) return@withContext
 
         val localIssues = dao.getIssuesOnceForStudent(cleanRegNo)
         localIssues.forEach { issue ->
@@ -79,13 +112,15 @@ class FirebaseIssueSync(
 
     suspend fun restoreIssuesFromFirebase(email: String) = withContext(Dispatchers.IO) {
         val cleanRegNo = email.trim()
-        if (cleanRegNo.isBlank()) return@withContext
+        if (!RegistrationNumberHelper.isValid(cleanRegNo)) return@withContext
 
         val snapshot = issuesRef(cleanRegNo).get().await()
         for (child in snapshot.children) {
             val remote = child.getValue(FirebaseIssueRecord::class.java) ?: continue
-            val effectiveSyncKey = remote.syncKey.trim().ifBlank { child.key.orEmpty().trim() }
-            if (effectiveSyncKey.isBlank() || remote.title.isBlank()) continue
+            val rawKey = remote.syncKey.trim().ifBlank { child.key.orEmpty().trim() }
+            val effectiveSyncKey = sanitizeKey(rawKey)
+            val cleanTitle = remote.title.trim()
+            if (effectiveSyncKey.isBlank() || cleanTitle.isBlank()) continue
 
             val existing = dao.getIssueBySyncKey(cleanRegNo, effectiveSyncKey)
             val resolvedCreatedAt = when {
@@ -97,11 +132,11 @@ class FirebaseIssueSync(
                 id = existing?.id ?: 0,
                 syncKey = effectiveSyncKey,
                 studentEmail = remote.studentEmail.trim().ifBlank { cleanRegNo },
-                title = remote.title,
-                description = remote.description,
-                category = remote.category.ifBlank { "MAINTENANCE" },
-                status = remote.status.ifBlank { "OPEN" },
-                timeAgo = remote.timeAgo.ifBlank { "Restored" },
+                title = cleanTitle,
+                description = remote.description.trim(),
+                category = normalizeCategory(remote.category),
+                status = normalizeStatus(remote.status),
+                timeAgo = remote.timeAgo.trim().ifBlank { "Restored" },
                 createdAt = resolvedCreatedAt
             )
             dao.insertIssue(entityToSave)
