@@ -127,13 +127,25 @@ fun UserDetailsScreen(
                                 val picked = GoogleAuthHelper.pickGoogleAccount(context, webClientId)
                                 picked.onSuccess { account ->
                                     val pickedEmail = account.email.trim().lowercase()
+                                    val targetRegNo = dao.getUserByUsername(cleanRegNo)?.username
+                                        ?: cleanRegNo
+
+                                    val alreadyLinkedOwner = dao.getUserByLinkedGoogleEmail(pickedEmail)
+                                    if (
+                                        alreadyLinkedOwner != null &&
+                                        !alreadyLinkedOwner.username.equals(targetRegNo, ignoreCase = true)
+                                    ) {
+                                        statusMessage = "This Google account is already linked to ${alreadyLinkedOwner.username}."
+                                        isError = true
+                                        isLinkingGoogle = false
+                                        return@launch
+                                    }
+
                                     linkedGoogleEmail = pickedEmail
                                     if (name.isBlank() && !account.displayName.isNullOrBlank()) {
                                         name = account.displayName.trim()
                                     }
 
-                                    val targetRegNo = dao.getUserByUsername(cleanRegNo)?.username
-                                        ?: cleanRegNo
                                     val cleanName = name.trim().ifBlank { "Student $targetRegNo" }
 
                                     dao.updateUserDetails(
@@ -264,6 +276,16 @@ fun UserDetailsScreen(
             Button(
                 onClick = {
                     if (cleanRegNo.isBlank() || busy) return@Button
+                    val cleanPhone = phoneNumber.trim()
+                    if (cleanPhone.isNotEmpty()) {
+                        val digitsOnly = cleanPhone.filter { it.isDigit() }
+                        if (digitsOnly.length < 10 || digitsOnly.length > 15) {
+                            statusMessage = "Enter a valid phone number (10 to 15 digits)."
+                            isError = true
+                            return@Button
+                        }
+                    }
+
                     isSaving = true
                     statusMessage = null
                     isError = false
@@ -274,7 +296,6 @@ fun UserDetailsScreen(
                         val cleanName = name.trim().ifBlank { "Student $targetRegNo" }
                         val cleanHostel = hostelNumber.trim()
                         val cleanRoom = roomNumber.trim()
-                        val cleanPhone = phoneNumber.trim()
                         val cleanDept = department.trim()
 
                         dao.updateUserDetails(

@@ -1,5 +1,6 @@
 package com.example.hostelfix.data
 
+import android.content.Context
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Delete
@@ -49,16 +50,13 @@ interface HostelDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUser(user: UserEntity)
 
-    @Query("SELECT * FROM users WHERE LOWER(username) = LOWER(:username) LIMIT 1")
+    @Query("SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(TRIM(:username)) LIMIT 1")
     suspend fun getUserByUsername(username: String): UserEntity?
 
-    @Query("SELECT * FROM users WHERE LOWER(username) = LOWER(:username) AND password = :password LIMIT 1")
+    @Query("SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(TRIM(:username)) AND password = :password LIMIT 1")
     suspend fun loginWithCredentials(username: String, password: String): UserEntity?
 
-    @Query("SELECT * FROM users WHERE LOWER(linkedGoogleEmail) = LOWER(:googleEmail) LIMIT 1")
-    suspend fun getUserByGoogleEmail(googleEmail: String): UserEntity?
-
-    @Query("UPDATE users SET linkedGoogleEmail = :googleEmail, photoUrl = :photoUrl WHERE LOWER(username) = LOWER(:username)")
+    @Query("UPDATE users SET linkedGoogleEmail = :googleEmail, photoUrl = :photoUrl WHERE LOWER(TRIM(username)) = LOWER(TRIM(:username))")
     suspend fun linkGoogleAccount(username: String, googleEmail: String, photoUrl: String?)
 
     @Query("SELECT * FROM users WHERE LOWER(TRIM(linkedGoogleEmail)) = LOWER(TRIM(:email)) LIMIT 1")
@@ -73,7 +71,7 @@ interface HostelDao {
             phoneNumber = :phoneNumber,
             department = :department,
             linkedGoogleEmail = :linkedGoogleEmail
-        WHERE LOWER(username) = LOWER(:username)
+        WHERE LOWER(TRIM(username)) = LOWER(TRIM(:username))
         """
     )
     suspend fun updateUserDetails(
@@ -86,29 +84,29 @@ interface HostelDao {
         linkedGoogleEmail: String?
     )
 
-    @Query("SELECT * FROM issues WHERE studentEmail = :email ORDER BY id DESC")
+    @Query("SELECT * FROM issues WHERE LOWER(TRIM(studentEmail)) = LOWER(TRIM(:email)) ORDER BY id DESC")
     fun getIssuesForStudent(email: String): Flow<List<IssueEntity>>
 
-    @Query("SELECT * FROM issues WHERE studentEmail = :email ORDER BY id ASC")
+    @Query("SELECT * FROM issues WHERE LOWER(TRIM(studentEmail)) = LOWER(TRIM(:email)) ORDER BY id ASC")
     suspend fun getIssuesOnceForStudent(email: String): List<IssueEntity>
 
-    @Query("SELECT * FROM issues WHERE studentEmail = :email AND syncKey = :syncKey LIMIT 1")
+    @Query("SELECT * FROM issues WHERE LOWER(TRIM(studentEmail)) = LOWER(TRIM(:email)) AND TRIM(syncKey) = TRIM(:syncKey) LIMIT 1")
     suspend fun getIssueBySyncKey(email: String, syncKey: String): IssueEntity?
 
-    @Query("SELECT * FROM issues WHERE studentEmail = :email AND category = :category ORDER BY id DESC")
+    @Query("SELECT * FROM issues WHERE LOWER(TRIM(studentEmail)) = LOWER(TRIM(:email)) AND UPPER(TRIM(category)) = UPPER(TRIM(:category)) ORDER BY id DESC")
     fun getIssuesByCategory(email: String, category: String): Flow<List<IssueEntity>>
 
-    @Query("SELECT COUNT(*) FROM issues WHERE studentEmail = :email AND status = 'OPEN'")
+    @Query("SELECT COUNT(*) FROM issues WHERE LOWER(TRIM(studentEmail)) = LOWER(TRIM(:email)) AND UPPER(TRIM(status)) = 'OPEN'")
     fun getOpenCount(email: String): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM issues WHERE studentEmail = :email AND status = 'IN_PROGRESS'")
+    @Query("SELECT COUNT(*) FROM issues WHERE LOWER(TRIM(studentEmail)) = LOWER(TRIM(:email)) AND UPPER(TRIM(status)) = 'IN_PROGRESS'")
     fun getInProgressCount(email: String): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM issues WHERE studentEmail = :email AND status = 'RESOLVED'")
+    @Query("SELECT COUNT(*) FROM issues WHERE LOWER(TRIM(studentEmail)) = LOWER(TRIM(:email)) AND UPPER(TRIM(status)) = 'RESOLVED'")
     fun getResolvedCount(email: String): Flow<Int>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertIssue(issue: IssueEntity)
+    suspend fun insertIssue(issue: IssueEntity): Long
 
     @Delete
     suspend fun deleteIssue(issue: IssueEntity)
@@ -122,7 +120,7 @@ abstract class HostelDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: HostelDatabase? = null
 
-        fun getDatabase(context: android.content.Context): HostelDatabase {
+        fun getDatabase(context: Context): HostelDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,

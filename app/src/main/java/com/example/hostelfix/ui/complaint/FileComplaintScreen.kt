@@ -1,7 +1,9 @@
 package com.example.hostelfix.ui.complaint
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -21,6 +23,7 @@ fun FileComplaintScreen(
     var isSubmitting by remember { mutableStateOf(false) }
     var showSubmittedDialog by remember { mutableStateOf(false) }
 
+    val scrollState = rememberScrollState()
     val categories = listOf(
         "MAINTENANCE" to "Maintenance",
         "ACADEMICAL" to "Academical"
@@ -61,7 +64,10 @@ fun FileComplaintScreen(
                     )
                 },
                 navigationIcon = {
-                    TextButton(onClick = onNavigateBack, enabled = !isSubmitting) {
+                    TextButton(
+                        onClick = { if (!isSubmitting) onNavigateBack() },
+                        enabled = !isSubmitting
+                    ) {
                         Text("Back")
                     }
                 }
@@ -72,6 +78,7 @@ fun FileComplaintScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(scrollState)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {

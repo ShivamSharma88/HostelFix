@@ -13,17 +13,18 @@ object RegistrationNumberHelper {
     }
 
     fun generate(
-        prefix: String = allowedPrefixes.random(),
+        prefix: String? = null,
         existingNumbers: Set<String> = emptySet(),
         random: Random = Random.Default
     ): String {
-        val validPrefix = prefix.trim().takeIf { it in allowedPrefixes }
+        val validPrefix = prefix?.trim()?.takeIf { it in allowedPrefixes }
             ?: allowedPrefixes.random(random)
+        val normalizedExisting = existingNumbers.mapTo(hashSetOf()) { it.trim() }
 
         repeat(200) {
             val suffix = (1..5).map { digits.random(random) }.joinToString("")
             val candidate = "$validPrefix$suffix"
-            if (candidate !in existingNumbers) {
+            if (candidate !in normalizedExisting) {
                 return candidate
             }
         }

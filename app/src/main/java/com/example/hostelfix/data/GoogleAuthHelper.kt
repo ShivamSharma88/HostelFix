@@ -18,10 +18,15 @@ object GoogleAuthHelper {
         context: Context,
         webClientId: String
     ): Result<PickedGoogleAccount> {
+        val cleanClientId = webClientId.trim()
+        if (cleanClientId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Google webClientId cannot be blank."))
+        }
+
         return try {
             val credentialManager = CredentialManager.create(context)
             val googleOption = GetSignInWithGoogleOption.Builder(
-                serverClientId = webClientId
+                serverClientId = cleanClientId
             ).build()
 
             val request = GetCredentialRequest.Builder()
@@ -36,11 +41,18 @@ object GoogleAuthHelper {
             val credential = result.credential
             if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                val email = googleIdTokenCredential.id.trim()
+                if (email.isBlank()) {
+                    return Result.failure(
+                        IllegalStateException("Google account did not return an email address.")
+                    )
+                }
+
                 Result.success(
                     PickedGoogleAccount(
-                        email = googleIdTokenCredential.id,
-                        displayName = googleIdTokenCredential.displayName,
-                        photoUrl = googleIdTokenCredential.profilePictureUri?.toString()
+                        email = email,
+                        displayName = googleIdTokenCredential.displayName?.trim()?.ifBlank { null },
+                        photoUrl = googleIdTokenCredential.profilePictureUri?.toString()?.ifBlank { null }
                     )
                 )
             } else {

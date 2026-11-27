@@ -255,6 +255,14 @@ fun LoginScreen(
                                 errorMessage = "Registration number must be 8 digits starting with 121–125."
                                 return@Button
                             }
+                            val cleanPhone = phoneNumber.trim()
+                            if (isRegisterMode && cleanPhone.isNotEmpty()) {
+                                val digitsOnly = cleanPhone.filter { it.isDigit() }
+                                if (digitsOnly.length < 10 || digitsOnly.length > 15) {
+                                    errorMessage = "Enter a valid phone number (10 to 15 digits)."
+                                    return@Button
+                                }
+                            }
 
                             isLoading = true
                             errorMessage = null
@@ -275,7 +283,7 @@ fun LoginScreen(
                                             name = name.trim().ifBlank { "Student $cleanRegNo" },
                                             hostelNumber = hostelNumber.trim(),
                                             roomNumber = roomNumber.trim(),
-                                            phoneNumber = phoneNumber.trim(),
+                                            phoneNumber = cleanPhone,
                                             department = department.trim()
                                         )
                                         dao.insertUser(newUser)
@@ -394,6 +402,14 @@ fun LoginScreen(
                                         return@onSuccess
                                     }
 
+                                    try {
+                                        withTimeoutOrNull(4000L) {
+                                            profileSync.restoreProfile(targetRegNo)
+                                        }
+                                    } catch (_: Exception) {
+                                        // Continue with local Room data if offline or not yet backed up
+                                    }
+
                                     val existingUser = dao.getUserByUsername(targetRegNo)
                                     if (
                                         existingUser != null &&
@@ -438,7 +454,6 @@ fun LoginScreen(
 
                                     try {
                                         withTimeoutOrNull(4000L) {
-                                            profileSync.restoreProfile(activeUser.username)
                                             profileSync.backupProfile(
                                                 dao.getUserByUsername(activeUser.username) ?: activeUser
                                             )

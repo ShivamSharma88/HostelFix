@@ -4,6 +4,7 @@ import com.google.firebase.database.FirebaseDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 data class FirebaseIssueRecord(
     val syncKey: String = "",
@@ -22,19 +23,26 @@ class FirebaseIssueSync(
         "https://hostelfix-app-74692-default-rtdb.asia-southeast1.firebasedatabase.app"
     )
 ) {
-    private fun sanitizeEmailKey(email: String): String =
-        email.trim().lowercase().replace(".", "_").replace("@", "_at_")
+    private fun sanitizeKey(raw: String): String =
+        raw.trim()
+            .lowercase()
+            .replace("@", "_at_")
+            .replace(Regex("[.#$\\[\\]]"), "_")
 
-    private fun issuesRef(email: String) =
+    private fun issuesRef(studentId: String) =
         database.reference
             .child("students")
-            .child(sanitizeEmailKey(email))
+            .child(sanitizeKey(studentId))
             .child("issues")
 
     suspend fun backupIssue(issue: IssueEntity) = withContext(Dispatchers.IO) {
+        val cleanRegNo = issue.studentEmail.trim()
+        if (cleanRegNo.isBlank()) return@withContext
+
+        val effectiveSyncKey = issue.syncKey.trim().ifBlank { UUID.randomUUID().toString() }
         val record = FirebaseIssueRecord(
-            syncKey = issue.syncKey,
-            studentEmail = issue.studentEmail,
+            syncKey = effectiveSyncKey,
+            studentEmail = cleanRegNo,
             title = issue.title,
             description = issue.description,
             category = issue.category,
@@ -42,33 +50,44 @@ class FirebaseIssueSync(
             timeAgo = issue.timeAgo,
             createdAt = issue.createdAt
         )
-        issuesRef(issue.studentEmail)
-            .child(issue.syncKey)
+        issuesRef(cleanRegNo)
+            .child(effectiveSyncKey)
             .setValue(record)
             .await()
     }
 
     suspend fun deleteIssueFromFirebase(issue: IssueEntity) = withContext(Dispatchers.IO) {
-        issuesRef(issue.studentEmail)
-            .child(issue.syncKey)
+        val cleanRegNo = issue.studentEmail.trim()
+        val cleanSyncKey = issue.syncKey.trim()
+        if (cleanRegNo.isBlank() || cleanSyncKey.isBlank()) return@withContext
+
+        issuesRef(cleanRegNo)
+            .child(cleanSyncKey)
             .removeValue()
             .await()
     }
 
     suspend fun backupAllIssuesToFirebase(email: String) = withContext(Dispatchers.IO) {
-        val localIssues = dao.getIssuesOnceForStudent(email)
+        val cleanRegNo = email.trim()
+        if (cleanRegNo.isBlank()) return@withContext
+
+        val localIssues = dao.getIssuesOnceForStudent(cleanRegNo)
         localIssues.forEach { issue ->
             backupIssue(issue)
         }
     }
 
     suspend fun restoreIssuesFromFirebase(email: String) = withContext(Dispatchers.IO) {
-        val snapshot = issuesRef(email).get().await()
+        val cleanRegNo = email.trim()
+        if (cleanRegNo.isBlank()) return@withContext
+
+        val snapshot = issuesRef(cleanRegNo).get().await()
         for (child in snapshot.children) {
             val remote = child.getValue(FirebaseIssueRecord::class.java) ?: continue
-            if (remote.syncKey.isBlank() || remote.title.isBlank()) continue
+            val effectiveSyncKey = remote.syncKey.trim().ifBlank { child.key.orEmpty().trim() }
+            if (effectiveSyncKey.isBlank() || remote.title.isBlank()) continue
 
-            val existing = dao.getIssueBySyncKey(email, remote.syncKey)
+            val existing = dao.getIssueBySyncKey(cleanRegNo, effectiveSyncKey)
             val resolvedCreatedAt = when {
                 remote.createdAt > 0L -> remote.createdAt
                 existing != null && existing.createdAt > 0L -> existing.createdAt
@@ -76,8 +95,8 @@ class FirebaseIssueSync(
             }
             val entityToSave = IssueEntity(
                 id = existing?.id ?: 0,
-                syncKey = remote.syncKey,
-                studentEmail = email,
+                syncKey = effectiveSyncKey,
+                studentEmail = remote.studentEmail.trim().ifBlank { cleanRegNo },
                 title = remote.title,
                 description = remote.description,
                 category = remote.category.ifBlank { "MAINTENANCE" },

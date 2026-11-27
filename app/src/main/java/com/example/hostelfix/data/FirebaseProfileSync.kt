@@ -73,7 +73,7 @@ class FirebaseProfileSync(
         if (cleanEmail != null) {
             val existingOwner = googleLinkRef(cleanEmail).get().await()
                 .getValue(String::class.java)?.trim()
-            if (!existingOwner.isNullOrBlank() && existingOwner != cleanRegNo) {
+            if (!existingOwner.isNullOrBlank() && !existingOwner.equals(cleanRegNo, ignoreCase = true)) {
                 throw IllegalStateException("This Google account is already linked to registration number $existingOwner.")
             }
             googleLinkRef(cleanEmail).setValue(cleanRegNo).await()
@@ -100,8 +100,9 @@ class FirebaseProfileSync(
         val remote = profileRef(cleanRegNo).get().await()
             .getValue(FirebaseUserProfile::class.java) ?: return@withContext
 
+        val remoteUsername = remote.username.trim()
         val existing = dao.getUserByUsername(cleanRegNo)
-            ?: dao.getUserByUsername(remote.username.trim())
+            ?: if (remoteUsername.isNotBlank()) dao.getUserByUsername(remoteUsername) else null
 
         if (existing != null) {
             dao.updateUserDetails(

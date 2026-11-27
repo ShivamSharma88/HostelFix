@@ -5,16 +5,21 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 data class ChatMessage(
     val id: String,
@@ -45,6 +50,14 @@ fun HostelBuddyChatScreen(
     }
     var inputText by remember { mutableStateOf("") }
     var isReplying by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
 
     fun sendMessage(raw: String) {
         val prompt = raw.trim()
@@ -61,11 +74,24 @@ fun HostelBuddyChatScreen(
         isReplying = true
 
         if (onSendPrompt != null) {
-            onSendPrompt(prompt) { reply ->
+            try {
+                onSendPrompt(prompt) { reply ->
+                    scope.launch {
+                        messages.add(
+                            ChatMessage(
+                                id = "b_${System.nanoTime()}",
+                                text = reply,
+                                isUser = false
+                            )
+                        )
+                        isReplying = false
+                    }
+                }
+            } catch (_: Exception) {
                 messages.add(
                     ChatMessage(
                         id = "b_${System.nanoTime()}",
-                        text = reply,
+                        text = "Couldn't get a response right now. Please try again.",
                         isUser = false
                     )
                 )
@@ -156,6 +182,7 @@ fun HostelBuddyChatScreen(
                     ) {
                         starterPrompts.forEach { chipText ->
                             SuggestionChip(
+                                enabled = !isReplying,
                                 onClick = { sendMessage(chipText) },
                                 label = {
                                     Text(
@@ -179,6 +206,8 @@ fun HostelBuddyChatScreen(
                             placeholder = { Text("Ask HostelBuddy...") },
                             singleLine = true,
                             enabled = !isReplying,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = { sendMessage(inputText) }),
                             shape = RoundedCornerShape(14.dp),
                             modifier = Modifier.weight(1f)
                         )
@@ -196,6 +225,7 @@ fun HostelBuddyChatScreen(
         }
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
