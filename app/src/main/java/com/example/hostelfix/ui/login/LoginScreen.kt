@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,12 +14,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.hostelfix.data.FirebaseProfileSync
 import com.example.hostelfix.data.GoogleAuthHelper
 import com.example.hostelfix.data.HostelDao
 import com.example.hostelfix.data.PasswordHasher
+import com.example.hostelfix.data.RegistrationNumberHelper
 import com.example.hostelfix.data.UserEntity
 import java.util.UUID
 import kotlinx.coroutines.launch
@@ -36,7 +39,7 @@ fun LoginScreen(
     val scrollState = rememberScrollState()
 
     var isRegisterMode by remember { mutableStateOf(false) }
-    var username by remember { mutableStateOf("") }
+    var registrationNumber by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var hostelNumber by remember { mutableStateOf("") }
@@ -86,7 +89,7 @@ fun LoginScreen(
                     )
                     Text(
                         text = if (isRegisterMode) {
-                            "Register with your campus email"
+                            "Register with your 8-digit registration number"
                         } else {
                             "Campus maintenance & issue desk"
                         },
@@ -137,12 +140,19 @@ fun LoginScreen(
                     }
 
                     OutlinedTextField(
-                        value = username,
-                        onValueChange = {
-                            username = it
+                        value = registrationNumber,
+                        onValueChange = { input ->
+                            registrationNumber = input.filter { it.isDigit() }.take(8)
                             errorMessage = null
                         },
-                        label = { Text("Student Email / Username") },
+                        label = { Text("Registration Number (8 digits)") },
+                        placeholder = { Text("e.g. 12410620") },
+                        supportingText = {
+                            if (isRegisterMode) {
+                                Text("Starts with 121–125 followed by 5 digits")
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         enabled = !isLoading,
                         shape = RoundedCornerShape(12.dp),
@@ -201,6 +211,7 @@ fun LoginScreen(
                             value = phoneNumber,
                             onValueChange = { phoneNumber = it },
                             label = { Text("Phone Number") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                             singleLine = true,
                             enabled = !isLoading,
                             shape = RoundedCornerShape(12.dp),
@@ -235,9 +246,13 @@ fun LoginScreen(
 
                     Button(
                         onClick = {
-                            val cleanUser = username.trim()
-                            if (cleanUser.isBlank() || password.isBlank()) {
-                                errorMessage = "Enter both username and password."
+                            val cleanRegNo = registrationNumber.trim()
+                            if (cleanRegNo.isBlank() || password.isBlank()) {
+                                errorMessage = "Enter both registration number and password."
+                                return@Button
+                            }
+                            if (!RegistrationNumberHelper.isValid(cleanRegNo)) {
+                                errorMessage = "Registration number must be 8 digits starting with 121–125."
                                 return@Button
                             }
 
@@ -247,17 +262,17 @@ fun LoginScreen(
                             scope.launch {
                                 try {
                                     if (isRegisterMode) {
-                                        val existing = dao.getUserByUsername(cleanUser)
+                                        val existing = dao.getUserByUsername(cleanRegNo)
                                         if (existing != null) {
-                                            errorMessage = "Account already exists. Switch to Login."
+                                            errorMessage = "Registration number already exists. Switch to Login."
                                             isLoading = false
                                             return@launch
                                         }
 
                                         val newUser = UserEntity(
-                                            username = cleanUser,
+                                            username = cleanRegNo,
                                             password = PasswordHasher.hashPassword(password),
-                                            name = name.trim().ifBlank { cleanUser.substringBefore("@") },
+                                            name = name.trim().ifBlank { "Student $cleanRegNo" },
                                             hostelNumber = hostelNumber.trim(),
                                             roomNumber = roomNumber.trim(),
                                             phoneNumber = phoneNumber.trim(),
@@ -266,7 +281,7 @@ fun LoginScreen(
                                         dao.insertUser(newUser)
 
                                         try {
-                                            withTimeoutOrNull(3000L) {
+                                            withTimeoutOrNull(4000L) {
                                                 profileSync.backupProfile(newUser)
                                             }
                                         } catch (_: Exception) {
@@ -276,15 +291,15 @@ fun LoginScreen(
                                         isLoading = false
                                         onLoginSuccess(newUser)
                                     } else {
-                                        val user = dao.getUserByUsername(cleanUser)
+                                        val user = dao.getUserByUsername(cleanRegNo)
                                         if (user == null || !PasswordHasher.verifyPassword(password, user.password)) {
-                                            errorMessage = "Invalid username or password."
+                                            errorMessage = "Invalid registration number or password."
                                             isLoading = false
                                             return@launch
                                         }
 
                                         try {
-                                            withTimeoutOrNull(3000L) {
+                                            withTimeoutOrNull(4000L) {
                                                 profileSync.restoreProfile(user.username)
                                             }
                                         } catch (_: Exception) {
@@ -355,15 +370,48 @@ fun LoginScreen(
                             scope.launch {
                                 val picked = GoogleAuthHelper.pickGoogleAccount(context, webClientId)
                                 picked.onSuccess { account ->
-                                    val cleanEmail = account.email.trim()
-                                    val existing = dao.getUserByUsername(cleanEmail)
-                                    val activeUser = if (existing != null) {
-                                        existing.copy(
-                                            name = existing.name.ifBlank {
-                                                account.displayName ?: cleanEmail.substringBefore("@")
+                                    val cleanEmail = account.email.trim().lowercase()
+                                    val typedRegNo = registrationNumber.trim()
+
+                                    val linkedRegNo = try {
+                                        withTimeoutOrNull(5000L) {
+                                            profileSync.findRegNoForGoogleEmail(cleanEmail)
+                                        } ?: dao.getUserByLinkedGoogleEmail(cleanEmail)?.username
+                                    } catch (_: Exception) {
+                                        dao.getUserByLinkedGoogleEmail(cleanEmail)?.username
+                                    }
+
+                                    if (!linkedRegNo.isNullOrBlank() && typedRegNo.isNotBlank() && typedRegNo != linkedRegNo) {
+                                        errorMessage = "This Gmail is already linked to registration number $linkedRegNo."
+                                        isLoading = false
+                                        return@onSuccess
+                                    }
+
+                                    val targetRegNo = linkedRegNo ?: typedRegNo
+                                    if (!RegistrationNumberHelper.isValid(targetRegNo)) {
+                                        errorMessage = "No account linked to $cleanEmail yet. Enter your 8-digit registration number (121–125) to link or register."
+                                        isLoading = false
+                                        return@onSuccess
+                                    }
+
+                                    val existingUser = dao.getUserByUsername(targetRegNo)
+                                    if (
+                                        existingUser != null &&
+                                        !existingUser.linkedGoogleEmail.isNullOrBlank() &&
+                                        existingUser.linkedGoogleEmail.trim().lowercase() != cleanEmail
+                                    ) {
+                                        errorMessage = "Registration number $targetRegNo is already linked to another Google account."
+                                        isLoading = false
+                                        return@onSuccess
+                                    }
+
+                                    val activeUser = if (existingUser != null) {
+                                        existingUser.copy(
+                                            name = existingUser.name.ifBlank {
+                                                account.displayName ?: "Student $targetRegNo"
                                             },
                                             linkedGoogleEmail = cleanEmail,
-                                            photoUrl = account.photoUrl ?: existing.photoUrl
+                                            photoUrl = account.photoUrl ?: existingUser.photoUrl
                                         ).also { updated ->
                                             dao.updateUserDetails(
                                                 username = updated.username,
@@ -377,10 +425,10 @@ fun LoginScreen(
                                         }
                                     } else {
                                         UserEntity(
-                                            username = cleanEmail,
+                                            username = targetRegNo,
                                             password = PasswordHasher.hashPassword(UUID.randomUUID().toString()),
                                             name = account.displayName?.takeIf { it.isNotBlank() }
-                                                ?: cleanEmail.substringBefore("@"),
+                                                ?: "Student $targetRegNo",
                                             linkedGoogleEmail = cleanEmail,
                                             photoUrl = account.photoUrl
                                         ).also { created ->
@@ -389,14 +437,16 @@ fun LoginScreen(
                                     }
 
                                     try {
-                                        withTimeoutOrNull(3000L) {
+                                        withTimeoutOrNull(4000L) {
                                             profileSync.restoreProfile(activeUser.username)
                                             profileSync.backupProfile(
                                                 dao.getUserByUsername(activeUser.username) ?: activeUser
                                             )
                                         }
-                                    } catch (_: Exception) {
-                                        // Saved locally; will sync when online
+                                    } catch (e: Exception) {
+                                        errorMessage = e.message ?: "Google account conflict."
+                                        isLoading = false
+                                        return@onSuccess
                                     }
 
                                     isLoading = false

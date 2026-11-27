@@ -23,36 +23,86 @@ class FirebaseProfileSync(
         "https://hostelfix-app-74692-default-rtdb.asia-southeast1.firebasedatabase.app"
     )
 ) {
-    private fun sanitizeEmailKey(email: String): String =
-        email.trim().lowercase().replace(".", "_").replace("@", "_at_")
+    private fun sanitizeKey(raw: String): String =
+        raw.trim()
+            .lowercase()
+            .replace("@", "_at_")
+            .replace(Regex("[.#$\\[\\]]"), "_")
 
-    private fun profileRef(usernameOrEmail: String) =
+    private fun profileRef(regNo: String) =
         database.reference
             .child("students")
-            .child(sanitizeEmailKey(usernameOrEmail))
+            .child(sanitizeKey(regNo))
             .child("profile")
 
+    private fun googleLinkRef(email: String) =
+        database.reference
+            .child("google_links")
+            .child(sanitizeKey(email))
+
+    suspend fun findRegNoForGoogleEmail(email: String): String? = withContext(Dispatchers.IO) {
+        val cleanEmail = email.trim().lowercase()
+        if (cleanEmail.isBlank()) return@withContext null
+
+        dao.getUserByLinkedGoogleEmail(cleanEmail)?.username?.let { return@withContext it }
+
+        val mappedRegNo = googleLinkRef(cleanEmail).get().await()
+            .getValue(String::class.java)?.trim()
+        if (!mappedRegNo.isNullOrBlank()) {
+            return@withContext mappedRegNo
+        }
+
+        val studentsSnapshot = database.reference.child("students").get().await()
+        for (studentSnap in studentsSnapshot.children) {
+            val profile = studentSnap.child("profile").getValue(FirebaseUserProfile::class.java)
+            val profileEmail = profile?.linkedGoogleEmail?.trim()?.lowercase()
+            val regNo = profile?.username?.trim()?.ifBlank { studentSnap.key.orEmpty() }
+            if (profileEmail == cleanEmail && !regNo.isNullOrBlank()) {
+                googleLinkRef(cleanEmail).setValue(regNo).await()
+                return@withContext regNo
+            }
+        }
+
+        null
+    }
+
     suspend fun backupProfile(user: UserEntity) = withContext(Dispatchers.IO) {
+        val cleanRegNo = user.username.trim()
+        val cleanEmail = user.linkedGoogleEmail?.trim()?.lowercase()?.ifBlank { null }
+
+        if (cleanEmail != null) {
+            val existingOwner = googleLinkRef(cleanEmail).get().await()
+                .getValue(String::class.java)?.trim()
+            if (!existingOwner.isNullOrBlank() && existingOwner != cleanRegNo) {
+                throw IllegalStateException("This Google account is already linked to registration number $existingOwner.")
+            }
+            googleLinkRef(cleanEmail).setValue(cleanRegNo).await()
+        }
+
         val profile = FirebaseUserProfile(
-            username = user.username.trim().lowercase(),
+            username = cleanRegNo,
             name = user.name.trim(),
             hostelNumber = user.hostelNumber.trim(),
             roomNumber = user.roomNumber.trim(),
             phoneNumber = user.phoneNumber.trim(),
             department = user.department.trim(),
-            linkedGoogleEmail = user.linkedGoogleEmail?.trim()?.lowercase()?.ifBlank { null },
+            linkedGoogleEmail = cleanEmail,
             photoUrl = user.photoUrl,
             updatedAt = System.currentTimeMillis()
         )
-        profileRef(user.username).setValue(profile).await()
+        profileRef(cleanRegNo).setValue(profile).await()
     }
 
-    suspend fun restoreProfile(usernameOrEmail: String) = withContext(Dispatchers.IO) {
-        val cleanKey = usernameOrEmail.trim().lowercase()
-        val remote = profileRef(cleanKey).get().await()
+    suspend fun restoreProfile(regNo: String) = withContext(Dispatchers.IO) {
+        val cleanRegNo = regNo.trim()
+        if (cleanRegNo.isBlank()) return@withContext
+
+        val remote = profileRef(cleanRegNo).get().await()
             .getValue(FirebaseUserProfile::class.java) ?: return@withContext
 
-        val existing = dao.getUserByUsername(cleanKey) ?: dao.getUserByUsername(usernameOrEmail.trim())
+        val existing = dao.getUserByUsername(cleanRegNo)
+            ?: dao.getUserByUsername(remote.username.trim())
+
         if (existing != null) {
             dao.updateUserDetails(
                 username = existing.username,

@@ -61,6 +61,9 @@ interface HostelDao {
     @Query("UPDATE users SET linkedGoogleEmail = :googleEmail, photoUrl = :photoUrl WHERE LOWER(username) = LOWER(:username)")
     suspend fun linkGoogleAccount(username: String, googleEmail: String, photoUrl: String?)
 
+    @Query("SELECT * FROM users WHERE LOWER(TRIM(linkedGoogleEmail)) = LOWER(TRIM(:email)) LIMIT 1")
+    suspend fun getUserByLinkedGoogleEmail(email: String): UserEntity?
+
     @Query(
         """
         UPDATE users 

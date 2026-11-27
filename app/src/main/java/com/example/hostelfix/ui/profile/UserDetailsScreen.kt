@@ -23,14 +23,14 @@ fun UserDetailsScreen(
     username: String,
     dao: HostelDao,
     profileSync: FirebaseProfileSync = remember(dao) { FirebaseProfileSync(dao) },
-    webClientId: String = "YOUR_WEB_CLIENT_ID.apps.googleusercontent.com",
+    webClientId: String = "2475045038-ginqkrmuta8k629jid8tklepaoufre56.apps.googleusercontent.com",
     onNavigateBack: () -> Unit,
     onSaved: (updatedName: String) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
-    val normalizedUser = remember(username) { username.trim().lowercase() }
+    val cleanRegNo = remember(username) { username.trim() }
 
     var name by remember { mutableStateOf("") }
     var hostelNumber by remember { mutableStateOf("") }
@@ -46,9 +46,9 @@ fun UserDetailsScreen(
 
     val busy = isSaving || isLinkingGoogle
 
-    LaunchedEffect(normalizedUser) {
-        if (normalizedUser.isBlank()) return@LaunchedEffect
-        val existing = dao.getUserByUsername(normalizedUser) ?: dao.getUserByUsername(username.trim())
+    LaunchedEffect(cleanRegNo) {
+        if (cleanRegNo.isBlank()) return@LaunchedEffect
+        val existing = dao.getUserByUsername(cleanRegNo)
         if (existing != null) {
             name = existing.name
             hostelNumber = existing.hostelNumber
@@ -132,12 +132,12 @@ fun UserDetailsScreen(
                                         name = account.displayName.trim()
                                     }
 
-                                    val targetUsername = dao.getUserByUsername(normalizedUser)?.username
-                                        ?: username.trim()
-                                    val cleanName = name.trim().ifBlank { targetUsername.substringBefore("@") }
+                                    val targetRegNo = dao.getUserByUsername(cleanRegNo)?.username
+                                        ?: cleanRegNo
+                                    val cleanName = name.trim().ifBlank { "Student $targetRegNo" }
 
                                     dao.updateUserDetails(
-                                        username = targetUsername,
+                                        username = targetRegNo,
                                         name = cleanName,
                                         hostelNumber = hostelNumber.trim(),
                                         roomNumber = roomNumber.trim(),
@@ -146,7 +146,7 @@ fun UserDetailsScreen(
                                         linkedGoogleEmail = pickedEmail
                                     )
 
-                                    dao.getUserByUsername(targetUsername)?.let { updated ->
+                                    dao.getUserByUsername(targetRegNo)?.let { updated ->
                                         try {
                                             withTimeoutOrNull(5000L) {
                                                 profileSync.backupProfile(updated)
@@ -263,22 +263,22 @@ fun UserDetailsScreen(
 
             Button(
                 onClick = {
-                    if (username.isBlank() || busy) return@Button
+                    if (cleanRegNo.isBlank() || busy) return@Button
                     isSaving = true
                     statusMessage = null
                     isError = false
 
                     scope.launch {
-                        val targetUsername = dao.getUserByUsername(normalizedUser)?.username
-                            ?: username.trim()
-                        val cleanName = name.trim().ifBlank { targetUsername.substringBefore("@") }
+                        val targetRegNo = dao.getUserByUsername(cleanRegNo)?.username
+                            ?: cleanRegNo
+                        val cleanName = name.trim().ifBlank { "Student $targetRegNo" }
                         val cleanHostel = hostelNumber.trim()
                         val cleanRoom = roomNumber.trim()
                         val cleanPhone = phoneNumber.trim()
                         val cleanDept = department.trim()
 
                         dao.updateUserDetails(
-                            username = targetUsername,
+                            username = targetRegNo,
                             name = cleanName,
                             hostelNumber = cleanHostel,
                             roomNumber = cleanRoom,
@@ -287,7 +287,7 @@ fun UserDetailsScreen(
                             linkedGoogleEmail = linkedGoogleEmail
                         )
 
-                        val updatedUser = dao.getUserByUsername(targetUsername)
+                        val updatedUser = dao.getUserByUsername(targetRegNo)
                         if (updatedUser != null) {
                             try {
                                 withTimeoutOrNull(5000L) {
